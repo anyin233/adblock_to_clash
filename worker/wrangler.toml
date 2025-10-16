@@ -1,0 +1,19 @@
+# Cloudflare Worker Configuration
+name = "adblock-to-clash-converter"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Worker type
+workers_dev = true
+
+# Routes (configure after deployment)
+# routes = [
+#   { pattern = "worker.cf.com/*", zone_name = "cf.com" }
+# ]
+
+# Environment variables (if needed)
+# [env.production]
+# name = "adblock-to-clash-converter"
+
+# Limits
+# compatibility_flags = []
