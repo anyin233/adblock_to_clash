@@ -1,45 +1,70 @@
 /**
- * Cloudflare Worker for Adblock to Clash rule conversion
+ * Cloudflare Worker for Adblock to Clash/Stash rule conversion
  * Usage: https://worker.cf.com/easylist-downloads.adblockplus.org/easylist.txt
- *        https://worker.cf.com/https://easylist-downloads.adblockplus.org/easylist.txt
+ *        https://worker.cf.com/https://easylist-downloads.adblockplus.org/easylist.txt?format=domain
+ *
+ * Supported formats:
+ * - clash (default): Clash YAML format with DOMAIN-SUFFIX rules
+ * - domain: Stash domain format, one domain per line
  */
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname.slice(1); // Remove leading slash
+    const format = url.searchParams.get('format') || 'clash'; // Get format parameter
 
     // Require a path
     if (!path) {
-      return new Response('Usage: Append rule source URL to this worker URL\nExample: https://worker.example.com/easylist-downloads.adblockplus.org/easylist.txt', {
+      return new Response('Usage: Append rule source URL to this worker URL\nExample: https://worker.example.com/easylist-downloads.adblockplus.org/easylist.txt\nSupported formats: ?format=clash (default) or ?format=domain', {
         headers: { 'Content-Type': 'text/plain; charset=utf-8' },
         status: 400,
+      });
+    }
+
+    // Validate format parameter
+    if (format !== 'clash' && format !== 'domain') {
+      return new Response(JSON.stringify({
+        error: 'Invalid format parameter. Use "clash" or "domain"',
+        format: format,
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
       });
     }
 
     try {
       // Normalize the rule source URL
       const ruleUrl = normalizeUrl(path);
-      
+
       // Download rules from the source
       console.log(`Fetching rules from: ${ruleUrl}`);
       const ruleContent = await downloadRules(ruleUrl);
-      
+
       // Parse Adblock rules
       const domains = parseAdblockRules(ruleContent);
-      
-      // Convert to Clash format
-      const clashRules = convertToClash(domains);
-      
-      // Return as YAML
-      return new Response(clashRules, {
+
+      // Convert based on requested format
+      let convertedRules;
+      let contentType;
+
+      if (format === 'domain') {
+        convertedRules = convertToDomain(domains);
+        contentType = 'text/plain; charset=utf-8';
+      } else {
+        convertedRules = convertToClash(domains);
+        contentType = 'text/yaml; charset=utf-8';
+      }
+
+      // Return the converted rules
+      return new Response(convertedRules, {
         headers: {
-          'Content-Type': 'text/yaml; charset=utf-8',
+          'Content-Type': contentType,
           'Access-Control-Allow-Origin': '*',
           'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
         },
       });
-      
+
     } catch (error) {
       return new Response(JSON.stringify({
         error: error.message,
@@ -180,4 +205,14 @@ function isValidDomain(domain) {
 function convertToClash(domains) {
   const rules = domains.map(domain => `  - DOMAIN-SUFFIX,${domain}`);
   return `payload:\n${rules.join('\n')}\n`;
+}
+
+/**
+ * Convert domains to Stash domain format (one domain per line)
+ * Uses leading dot notation for wildcard matching
+ */
+function convertToDomain(domains) {
+  // Add leading dot to each domain for wildcard matching
+  const domainList = domains.map(domain => `.${domain}`);
+  return domainList.join('\n') + '\n';
 }
